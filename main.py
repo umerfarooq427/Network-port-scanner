@@ -1,110 +1,330 @@
 # ============================================================
 # main.py
-# Entry point — runs the CLI menu for the port scanner
-# OOP Concept: Abstraction (ties all classes together)
+# GUI version of Network Port Scanner using tkinter
+# OOP Concept: Abstraction (all GUI logic inside App class)
 # ============================================================
 
+import tkinter as tk
+from tkinter import ttk, messagebox
+import threading
 from scanner import Scanner, QuickScanner, FullScanner
 from report  import ScanReport
 
 class PortScannerApp:
 
-    # ── Display main menu ────────────────────────────────────
-    def __show_menu(self):
-        print("  ╔══════════════════════════════════════╗")
-        print("  ║       📡 NETWORK PORT SCANNER        ║")
-        print("  ╠══════════════════════════════════════╣")
-        print("  ║  [1]  Quick Scan  (ports 1–100)      ║")
-        print("  ║  [2]  Full Scan   (ports 1–1000)     ║")
-        print("  ║  [3]  Custom Scan (you pick range)   ║")
-        print("  ║  [4]  Exit                           ║")
-        print("  ╚══════════════════════════════════════╝")
+    def __init__(self, root):
+        self.root = root
+        self.root.title("📡 Network Port Scanner")
+        self.root.geometry("720x600")
+        self.root.resizable(False, False)
+        self.root.configure(bg="#0D1117")
 
-    # ── Get target IP from user ──────────────────────────────
-    def __get_target(self):
-        print("\n  Safe targets to scan:")
-        print("  → 127.0.0.1       (your own PC)")
-        print("  → 192.168.1.1     (your home router)")
-        print("  → scanme.nmap.org (practice server)\n")
-        target = input("  Enter target IP or hostname: ").strip()
-        return target
+        self.__scanning = False
+        self.__build_ui()
 
-    # ── Handle Quick Scan ────────────────────────────────────
-    def __handle_quick_scan(self):
-        target  = self.__get_target()
-        scanner = QuickScanner(target)
-        results = scanner.run()
+    # ── Build the full UI ────────────────────────────────────
+    def __build_ui(self):
+        self.__build_header()
+        self.__build_input_section()
+        self.__build_scan_button()
+        self.__build_results_section()
+        self.__build_status_bar()
 
-        report = ScanReport(target)
-        report.add_results(results)
-        self.__show_report_options(report)
+    # ── Header ───────────────────────────────────────────────
+    def __build_header(self):
+        header = tk.Frame(self.root, bg="#161B22", pady=12)
+        header.pack(fill="x")
 
-    # ── Handle Full Scan ─────────────────────────────────────
-    def __handle_full_scan(self):
-        target  = self.__get_target()
-        scanner = FullScanner(target)
-        results = scanner.run()
+        tk.Label(
+            header,
+            text="📡  NETWORK PORT SCANNER",
+            font=("Consolas", 18, "bold"),
+            fg="#00E5FF", bg="#161B22"
+        ).pack()
 
-        report = ScanReport(target)
-        report.add_results(results)
-        self.__show_report_options(report)
+        tk.Label(
+            header,
+            text="OOP Python Project  ·  Cybersecurity",
+            font=("Consolas", 10),
+            fg="#7B93A8", bg="#161B22"
+        ).pack()
 
-    # ── Handle Custom Scan ───────────────────────────────────
-    def __handle_custom_scan(self):
-        target = self.__get_target()
+    # ── Input Section ────────────────────────────────────────
+    def __build_input_section(self):
+        frame = tk.Frame(self.root, bg="#0D1117", pady=15)
+        frame.pack(fill="x", padx=20)
 
-        try:
-            start = int(input("  Start port : ").strip())
-            end   = int(input("  End port   : ").strip())
+        # Target IP
+        tk.Label(
+            frame, text="Target IP / Hostname",
+            font=("Consolas", 11), fg="#7B93A8", bg="#0D1117"
+        ).grid(row=0, column=0, sticky="w", padx=(0, 15))
 
-            if start < 1 or end > 65535 or start > end:
-                print("\n  ❌ Invalid port range. Use 1–65535.\n")
-                return
+        self.__target_entry = tk.Entry(
+            frame, width=28,
+            font=("Consolas", 12), fg="#E8F4FD", bg="#161B22",
+            insertbackground="white",
+            relief="flat", bd=5
+        )
+        self.__target_entry.insert(0, "127.0.0.1")
+        self.__target_entry.grid(row=0, column=1, padx=(0, 20))
 
-        except ValueError:
-            print("\n  ❌ Please enter valid numbers.\n")
+        # Scan Type
+        tk.Label(
+            frame, text="Scan Type",
+            font=("Consolas", 11), fg="#7B93A8", bg="#0D1117"
+        ).grid(row=0, column=2, sticky="w", padx=(0, 10))
+
+        self.__scan_type = ttk.Combobox(
+            frame,
+            values=["Quick Scan (1–100)", "Full Scan (1–1000)", "Custom Range"],
+            state="readonly", width=20,
+            font=("Consolas", 11)
+        )
+        self.__scan_type.current(0)
+        self.__scan_type.grid(row=0, column=3)
+        self.__scan_type.bind("<<ComboboxSelected>>", self.__on_scan_type_change)
+
+        # Custom range (hidden by default)
+        self.__custom_frame = tk.Frame(self.root, bg="#0D1117")
+        self.__custom_frame.pack(fill="x", padx=20)
+
+        tk.Label(
+            self.__custom_frame, text="Start Port",
+            font=("Consolas", 11), fg="#7B93A8", bg="#0D1117"
+        ).grid(row=0, column=0, sticky="w", padx=(0,10), pady=5)
+
+        self.__start_port = tk.Entry(
+            self.__custom_frame, width=8,
+            font=("Consolas", 12), fg="#E8F4FD", bg="#161B22",
+            insertbackground="white", relief="flat", bd=5
+        )
+        self.__start_port.insert(0, "1")
+        self.__start_port.grid(row=0, column=1, padx=(0, 20))
+
+        tk.Label(
+            self.__custom_frame, text="End Port",
+            font=("Consolas", 11), fg="#7B93A8", bg="#0D1117"
+        ).grid(row=0, column=2, sticky="w", padx=(0,10))
+
+        self.__end_port = tk.Entry(
+            self.__custom_frame, width=8,
+            font=("Consolas", 12), fg="#E8F4FD", bg="#161B22",
+            insertbackground="white", relief="flat", bd=5
+        )
+        self.__end_port.insert(0, "500")
+        self.__end_port.grid(row=0, column=3)
+
+        self.__custom_frame.pack_forget()  # hide by default
+
+    # ── Show/hide custom range ───────────────────────────────
+    def __on_scan_type_change(self, event):
+        if self.__scan_type.get() == "Custom Range":
+            self.__custom_frame.pack(fill="x", padx=20, pady=4)
+        else:
+            self.__custom_frame.pack_forget()
+
+    # ── Scan Button ──────────────────────────────────────────
+    def __build_scan_button(self):
+        btn_frame = tk.Frame(self.root, bg="#0D1117", pady=8)
+        btn_frame.pack()
+
+        self.__scan_btn = tk.Button(
+            btn_frame,
+            text="  🔍  START SCAN  ",
+            font=("Consolas", 13, "bold"),
+            fg="#0D1117", bg="#00E5FF",
+            activebackground="#00B8CC",
+            relief="flat", bd=0, padx=20, pady=8,
+            cursor="hand2",
+            command=self.__start_scan
+        )
+        self.__scan_btn.pack(side="left", padx=10)
+
+        self.__clear_btn = tk.Button(
+            btn_frame,
+            text="  🗑️  CLEAR  ",
+            font=("Consolas", 13),
+            fg="#E8F4FD", bg="#21262D",
+            activebackground="#30363D",
+            relief="flat", bd=0, padx=15, pady=8,
+            cursor="hand2",
+            command=self.__clear_results
+        )
+        self.__clear_btn.pack(side="left", padx=5)
+
+    # ── Results Table ────────────────────────────────────────
+    def __build_results_section(self):
+        frame = tk.Frame(self.root, bg="#0D1117", pady=5)
+        frame.pack(fill="both", expand=True, padx=20)
+
+        tk.Label(
+            frame, text="SCAN RESULTS",
+            font=("Consolas", 11, "bold"),
+            fg="#00E5FF", bg="#0D1117"
+        ).pack(anchor="w", pady=(0, 5))
+
+        # Table frame
+        table_frame = tk.Frame(frame, bg="#161B22")
+        table_frame.pack(fill="both", expand=True)
+
+        # Scrollbar
+        scrollbar = ttk.Scrollbar(table_frame)
+        scrollbar.pack(side="right", fill="y")
+
+        # Treeview (table)
+        style = ttk.Style()
+        style.theme_use("clam")
+        style.configure(
+            "Treeview",
+            background="#0D1117",
+            foreground="#E8F4FD",
+            rowheight=28,
+            fieldbackground="#0D1117",
+            font=("Consolas", 11)
+        )
+        style.configure(
+            "Treeview.Heading",
+            background="#161B22",
+            foreground="#00E5FF",
+            font=("Consolas", 11, "bold"),
+            relief="flat"
+        )
+        style.map("Treeview", background=[("selected", "#21262D")])
+
+        self.__table = ttk.Treeview(
+            table_frame,
+            columns=("port", "status", "service"),
+            show="headings",
+            yscrollcommand=scrollbar.set
+        )
+        self.__table.heading("port",    text="Port")
+        self.__table.heading("status",  text="Status")
+        self.__table.heading("service", text="Service")
+
+        self.__table.column("port",    width=120, anchor="center")
+        self.__table.column("status",  width=150, anchor="center")
+        self.__table.column("service", width=350, anchor="center")
+
+        self.__table.pack(fill="both", expand=True)
+        scrollbar.config(command=self.__table.yview)
+
+        # Row color tags
+        self.__table.tag_configure("open",   foreground="#00FF88")
+        self.__table.tag_configure("closed", foreground="#7B93A8")
+
+    # ── Status Bar ───────────────────────────────────────────
+    def __build_status_bar(self):
+        bar = tk.Frame(self.root, bg="#161B22", pady=6)
+        bar.pack(fill="x", side="bottom")
+
+        self.__status_label = tk.Label(
+            bar,
+            text="Ready to scan.",
+            font=("Consolas", 10),
+            fg="#7B93A8", bg="#161B22"
+        )
+        self.__status_label.pack(side="left", padx=15)
+
+        self.__summary_label = tk.Label(
+            bar, text="",
+            font=("Consolas", 10, "bold"),
+            fg="#00E5FF", bg="#161B22"
+        )
+        self.__summary_label.pack(side="right", padx=15)
+
+    # ── Start Scan ───────────────────────────────────────────
+    def __start_scan(self):
+        if self.__scanning:
             return
 
-        scanner = Scanner(target)
-        results = scanner.run(start, end)
+        target = self.__target_entry.get().strip()
+        if not target:
+            messagebox.showerror("Error", "Please enter a target IP address.")
+            return
 
-        report = ScanReport(target)
-        report.add_results(results)
-        self.__show_report_options(report)
+        # Clear old results
+        self.__clear_results()
 
-    # ── Ask user which report view they want ─────────────────
-    def __show_report_options(self, report):
-        print("  How do you want to see results?")
-        print("  [1]  Full report (open + closed)")
-        print("  [2]  Open ports only")
-        choice = input("\n  Enter choice: ").strip()
+        # Run scan in separate thread so GUI doesn't freeze
+        self.__scanning = True
+        self.__scan_btn.config(state="disabled", text="  ⏳  SCANNING...  ")
+        self.__status_label.config(text=f"Scanning {target} ...")
 
-        if choice == "1":
-            report.display()
-        elif choice == "2":
-            report.display_open_only()
-        else:
-            report.display()
+        thread = threading.Thread(target=self.__run_scan, args=(target,))
+        thread.daemon = True
+        thread.start()
 
-    # ── Main run loop ────────────────────────────────────────
-    def run(self):
-        print("\n  Welcome to Network Port Scanner 📡\n")
+    # ── Run Scan in Thread ───────────────────────────────────
+    def __run_scan(self, target):
+        try:
+            scan_choice = self.__scan_type.get()
 
-        while True:
-            self.__show_menu()
-            choice = input("\n  Enter choice (1-4): ").strip()
+            if scan_choice == "Quick Scan (1–100)":
+                scanner = QuickScanner(target)
+                results = scanner.run()
 
-            if   choice == "1": self.__handle_quick_scan()
-            elif choice == "2": self.__handle_full_scan()
-            elif choice == "3": self.__handle_custom_scan()
-            elif choice == "4":
-                print("\n  Goodbye! 📡\n")
-                break
+            elif scan_choice == "Full Scan (1–1000)":
+                scanner = FullScanner(target)
+                results = scanner.run()
+
             else:
-                print("\n  ❌ Invalid choice. Enter 1-4.\n")
+                try:
+                    start = int(self.__start_port.get())
+                    end   = int(self.__end_port.get())
+                except ValueError:
+                    self.root.after(0, lambda: messagebox.showerror("Error", "Enter valid port numbers."))
+                    return
+                scanner = Scanner(target)
+                results = scanner.run(start, end)
+
+            # Update GUI from main thread
+            self.root.after(0, lambda: self.__show_results(results, target))
+
+        except Exception as e:
+            self.root.after(0, lambda: messagebox.showerror("Scan Error", str(e)))
+        finally:
+            self.__scanning = False
+            self.root.after(0, lambda: self.__scan_btn.config(
+                state="normal", text="  🔍  START SCAN  "
+            ))
+
+    # ── Show Results in Table ────────────────────────────────
+    def __show_results(self, results, target):
+        open_count   = 0
+        closed_count = 0
+
+        for port in results:
+            if port.is_open():
+                self.__table.insert(
+                    "", "end",
+                    values=(f"Port {port.get_number()}", "✅  OPEN", port.get_service()),
+                    tags=("open",)
+                )
+                open_count += 1
+            else:
+                self.__table.insert(
+                    "", "end",
+                    values=(f"Port {port.get_number()}", "🔴  CLOSED", port.get_service()),
+                    tags=("closed",)
+                )
+                closed_count += 1
+
+        self.__status_label.config(text=f"Scan complete  →  {target}")
+        self.__summary_label.config(
+            text=f"Open: {open_count}   Closed: {closed_count}"
+        )
+
+    # ── Clear Results ────────────────────────────────────────
+    def __clear_results(self):
+        for row in self.__table.get_children():
+            self.__table.delete(row)
+        self.__status_label.config(text="Ready to scan.")
+        self.__summary_label.config(text="")
 
 
-# ── Entry point ──────────────────────────────────────────────
+# ── Entry Point ──────────────────────────────────────────────
 if __name__ == "__main__":
-    app = PortScannerApp()
-    app.run()
+    root = tk.Tk()
+    app  = PortScannerApp(root)
+    root.mainloop()
